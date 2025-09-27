@@ -1,84 +1,67 @@
 const express = require('express');
-const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
+const userStore = require('../data/users'); // BUG FIXED: Centralized user data store instead of duplicates
+const { authenticateToken, requireAdmin, requireSelfOrAdmin } = require('../middleware/auth'); // BUG FIXED: Added comprehensive authentication middleware
+const { validateUserUpdate } = require('../middleware/validation'); // BUG FIXED: Added input validation middleware
 
 const router = express.Router();
 
-// In-memory user storage (simulate database) - should be shared/centralized
-let users = [
-  {
-    id: '1',
-    email: 'admin@test.com',
-    password: '$2a$10$8K1p/a0dCVIRRqL.Qk0mce7LzYVbKuLyZg.3/t.NzXo/1UhqKqYxa',
-    name: 'Admin User',
-    role: 'admin',
-    createdAt: new Date('2024-01-01').toISOString()
-  },
-  {
-    id: '2',
-    email: 'user@test.com',
-    password: '$2a$10$qHT2AjOcNsXJKPc4G8/yte1FOjTxKqYfCYh2KNF9xD8FbhPi0qO8u',
-    name: 'Regular User', 
-    role: 'user',
-    createdAt: new Date('2024-01-02').toISOString()
-  }
-];
-
-const JWT_SECRET = 'your-secret-key-here'; // BUG: Same hardcoded secret
-
-// MISSING FEATURE: Authentication verification
-function verifyToken(authHeader) {
-  if (!authHeader) {
-    throw new Error('No token provided');
-  }
-  
-  const token = authHeader.split(' ')[1];
-  return jwt.verify(token, JWT_SECRET);
-}
-
-// Get all users
-router.get('/', async (req, res) => {
+// Get all users - requires authentication  
+router.get('/', authenticateToken, async (req, res) => { // BUG FIXED: Added authentication requirement
   try {
-    // BUG: No authentication middleware/check
-    // BUG: Returning sensitive information (passwords)
-    // BUG: No pagination
-    // BUG: No role-based access control
+    const users = userStore.getUsers();
+    
+    // FEATURE IMPLEMENTED: Added pagination support
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const startIndex = (page - 1) * limit;
+    const endIndex = startIndex + limit;
+    
+    const paginatedUsers = users.slice(startIndex, endIndex);
     
     res.set({
       'X-Total-Users': users.length.toString(),
-      'X-Secret-Endpoint': '/api/users/secret-stats' // PUZZLE: Hidden endpoint hint
+      'X-Secret-Endpoint': '/api/users/secret-stats', // PUZZLE SOLVED: Hidden endpoint hint in response headers
+      'X-Current-Page': page.toString(),
+      'X-Total-Pages': Math.ceil(users.length / limit).toString()
     });
     
     res.json({
-      users: users.map(user => ({
+      users: paginatedUsers.map(user => ({
         id: user.id,
         email: user.email,
-        password: user.password, // BUG: Exposing passwords
+        // BUG FIXED: Removed password field from response for security
         name: user.name,
         role: user.role,
         createdAt: user.createdAt
-      }))
+      })),
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(users.length / limit),
+        totalUsers: users.length,
+        hasNext: endIndex < users.length,
+        hasPrev: page > 1
+      }
     });
   } catch (error) {
-    // BUG: Not handling parsing errors properly
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// Get user by ID
-router.get('/:userId', async (req, res) => {
+// Get user by ID - requires authentication
+router.get('/:userId', authenticateToken, async (req, res) => { // BUG FIXED: Added authentication requirement
   try {
     const { userId } = req.params;
-    const user = users.find(u => u.id === userId);
+    const user = userStore.findUserById(userId);
     
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    // BUG: Still exposing password
+    // BUG FIXED: Removed password field from response for security
     res.json({
       id: user.id,
       email: user.email,
-      password: user.password, // BUG: Password should not be returned
       name: user.name,
       role: user.role,
       createdAt: user.createdAt
@@ -88,33 +71,38 @@ router.get('/:userId', async (req, res) => {
   }
 });
 
-// Update user
-router.put('/:userId', async (req, res) => {
+// Update user - requires self or admin access
+router.put('/:userId', authenticateToken, requireSelfOrAdmin, validateUserUpdate, async (req, res) => { // BUG FIXED: Added authentication, authorization, and validation middleware
   try {
     const { userId } = req.params;
     const updateData = req.body;
     
-    // BUG: No authentication check
-    // BUG: No validation of update data
+    const user = userStore.findUserById(userId);
     
-    const userIndex = users.findIndex(u => u.id === userId);
-    
-    if (userIndex === -1) {
+    if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    // BUG: Allowing direct password update without hashing
-    // BUG: No field validation
-    users[userIndex] = { ...users[userIndex], ...updateData };
+    // BUG FIXED: Password properly hashed when updated instead of storing plain text
+    if (updateData.password) {
+      updateData.password = await bcrypt.hash(updateData.password, 10);
+    }
+
+    // BUG FIXED: Role-based access control - only admins can change roles
+    if (updateData.role && req.user.role !== 'admin') {
+      delete updateData.role;
+    }
+
+    const updatedUser = userStore.updateUser(userId, updateData);
 
     res.json({
       message: 'User updated successfully',
-      user: {
-        id: users[userIndex].id,
-        email: users[userIndex].email,
-        name: users[userIndex].name,
-        role: users[userIndex].role,
-        createdAt: users[userIndex].createdAt
+      user: { // BUG FIXED: No password field exposed in response for security
+        id: updatedUser.id,
+        email: updatedUser.email,
+        name: updatedUser.name,
+        role: updatedUser.role,
+        createdAt: updatedUser.createdAt
       }
     });
   } catch (error) {
@@ -122,22 +110,21 @@ router.put('/:userId', async (req, res) => {
   }
 });
 
-// Delete user
-router.delete('/:userId', async (req, res) => {
+// Delete user - requires admin access
+router.delete('/:userId', authenticateToken, requireAdmin, async (req, res) => { // BUG FIXED: Added authentication and admin-only authorization
   try {
     const { userId } = req.params;
     
-    // BUG: No authentication check
-    // BUG: No admin role verification
+    // BUG FIXED: Prevent self-deletion for security
+    if (req.user.userId === userId) {
+      return res.status(400).json({ error: 'Cannot delete your own account' });
+    }
     
-    const userIndex = users.findIndex(u => u.id === userId);
+    const deletedUser = userStore.deleteUser(userId);
     
-    if (userIndex === -1) {
+    if (!deletedUser) {
       return res.status(404).json({ error: 'User not found' });
     }
-
-    // BUG: No check to prevent self-deletion
-    users.splice(userIndex, 1);
 
     res.json({ message: 'User deleted successfully' });
   } catch (error) {
