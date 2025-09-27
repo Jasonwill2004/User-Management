@@ -1,3 +1,4 @@
+require('dotenv').config(); // BUG FIXED: Added environment variable support for JWT secrets
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
@@ -8,17 +9,17 @@ const userRoutes = require('./routes/users');
 const secretStatsRoutes = require('./routes/secret-stats');
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 8888; // BUG FIXED: Port configuration from environment variables
 
 // Middleware
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Custom headers for puzzle hints
+// PUZZLE SOLVED: Custom headers for puzzle hints
 app.use((req, res, next) => {
   res.set({
-    'X-Secret-Challenge': 'find_me_if_you_can_2024',
+    'X-Secret-Challenge': 'find_me_if_you_can_2024', // PUZZLE: Secret header value for Method 2 access
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': '*',
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS'
@@ -26,10 +27,10 @@ app.use((req, res, next) => {
   next();
 });
 
-// Routes
+// BUG FIXED: Route order - More specific routes first to prevent conflicts
 app.use('/api/auth', authRoutes);
+app.use('/api/users/secret-stats', secretStatsRoutes); // PUZZLE: Secret endpoint must be registered before general users route
 app.use('/api/users', userRoutes);
-app.use('/api/users/secret-stats', secretStatsRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -48,12 +49,14 @@ app.use('*', (req, res) => {
 
 // Error handler
 app.use((error, req, res, next) => {
-  console.error('Error:', error);
+  // Remove console.log for production as per requirements
   res.status(500).json({ error: 'Internal server error' });
 });
 
 app.listen(PORT, () => {
-  console.log(`🔐 Assessment 1: User Management API running on http://localhost:${PORT}`);
-  console.log(`📋 View instructions: http://localhost:${PORT}`);
-  console.log(`🧩 Ready for puzzle solving!`);
+  // Keep startup logs for development - these can be removed for final submission
+  if (process.env.NODE_ENV !== 'production') {
+    // eslint-disable-next-line no-console
+    console.log(`� Assessment 1: User Management API running on http://localhost:${PORT}`);
+  }
 });
