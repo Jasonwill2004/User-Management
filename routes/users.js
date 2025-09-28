@@ -3,36 +3,90 @@ const bcrypt = require('bcryptjs');
 const userStore = require('../data/users'); // BUG FIXED: Centralized user data store instead of duplicates
 const { authenticateToken, requireAdmin, requireSelfOrAdmin } = require('../middleware/auth'); // BUG FIXED: Added comprehensive authentication middleware
 const { validateUserUpdate } = require('../middleware/validation'); // BUG FIXED: Added input validation middleware
+const { generalLimiter } = require('../middleware/rateLimiter'); // CRITICAL SECURITY BUG FIX: Rate limiting
+const { sanitizeInput, searchValidationRules, validateRequest } = require('../middleware/security'); // BONUS: Input sanitization and validation
+const { logApiUsage } = require('../utils/logger'); // BONUS: API usage logging
 
 const router = express.Router();
 
-// Get all users - requires authentication  
-router.get('/', authenticateToken, async (req, res) => { // BUG FIXED: Added authentication requirement
+// DEBUG: Simple test endpoint to check if routes work
+router.get('/test', (req, res) => {
+  res.json({ message: 'User routes working', users: userStore.getUsers().length });
+});
+
+/**
+ * @swagger
+ * /api/users/search:
+ *   get:
+ *     summary: Search users by name or email
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: q
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Search query for name or email
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *         description: Page number
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 100
+ *         description: Items per page
+ *     responses:
+ *       200:
+ *         description: Search results
+ *       404:
+ *         description: No users found
+ */
+// FEATURE: Dedicated search endpoint (MUST be before /:userId route)
+router.get('/search', authenticateToken, async (req, res) => {
   try {
-    const users = userStore.getUsers();
+    const searchQuery = req.query.q;
     
-    // FEATURE IMPLEMENTED: Added pagination support
+    if (!searchQuery || searchQuery.trim() === '') {
+      return res.status(400).json({ error: 'Search query is required' });
+    }
+    
+    let users = userStore.getUsers();
+    const query = searchQuery.toLowerCase().trim();
+    
+    // Search in name and email
+    users = users.filter(user => 
+      user.name.toLowerCase().includes(query) || 
+      user.email.toLowerCase().includes(query)
+    );
+    
+    if (users.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
     const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
+    const limit = Math.min(parseInt(req.query.limit) || 10, 100);
     const startIndex = (page - 1) * limit;
-    const endIndex = startIndex + limit;
+    const endIndex = page * limit;
     
     const paginatedUsers = users.slice(startIndex, endIndex);
     
-    res.set({
-      'X-Total-Users': users.length.toString(),
-      'X-Secret-Endpoint': '/api/users/secret-stats', // PUZZLE SOLVED: Hidden endpoint hint in response headers
-      'X-Current-Page': page.toString(),
-      'X-Total-Pages': Math.ceil(users.length / limit).toString()
-    });
+    // Log API usage
+    logApiUsage(req, res, Date.now() - req.startTime);
     
     res.json({
       users: paginatedUsers.map(user => ({
         id: user.id,
-        email: user.email,
-        // BUG FIXED: Removed password field from response for security
+        email: user.email, 
         name: user.name,
         role: user.role,
+        isActive: user.isActive,
         createdAt: user.createdAt
       })),
       pagination: {
@@ -41,7 +95,94 @@ router.get('/', authenticateToken, async (req, res) => { // BUG FIXED: Added aut
         totalUsers: users.length,
         hasNext: endIndex < users.length,
         hasPrev: page > 1
-      }
+      },
+      searchQuery: searchQuery
+    });
+  } catch (error) {
+    console.error('Search endpoint error:', error);
+    res.status(500).json({ error: 'Internal server error', details: error.message });
+  }
+});
+
+/**
+ * @swagger
+ * /api/users:
+ *   get:
+ *     summary: Get users with search and pagination
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: q
+ *         schema:
+ *           type: string
+ *         description: Search query for name or email
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *         description: Page number
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 100
+ *         description: Items per page
+ *     responses:
+ *       200:
+ *         description: Users retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/PaginatedUsers'
+ *       401:
+ *         description: Unauthorized
+ */
+// FEATURE: Get users with search functionality and enhanced security
+router.get('/', generalLimiter, authenticateToken, sanitizeInput, searchValidationRules(), validateRequest, async (req, res) => { // BUG FIXED: Added authentication requirement, CRITICAL SECURITY BUG FIX: Rate limiting, FEATURE: Search functionality
+  try {
+    let users = userStore.getUsers();
+    
+    // FEATURE: User search functionality
+    const searchQuery = req.query.q;
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase().trim();
+      users = users.filter(user => 
+        user.name.toLowerCase().includes(query) || 
+        user.email.toLowerCase().includes(query)
+      );
+    }
+    
+    const page = parseInt(req.query.page) || 1;
+    const limit = Math.min(parseInt(req.query.limit) || 10, 100); // FEATURE IMPLEMENTED: Pagination with max limit
+    const startIndex = (page - 1) * limit;
+    const endIndex = page * limit;
+    
+    const paginatedUsers = users.slice(startIndex, endIndex);
+    
+    // BONUS: Log API usage
+    logApiUsage(req, res, Date.now() - req.startTime);
+    
+    res.json({
+      users: paginatedUsers.map(user => ({
+        id: user.id,
+        email: user.email, 
+        name: user.name,
+        role: user.role,
+        isActive: user.isActive,
+        createdAt: user.createdAt
+      })), // BUG FIXED: Password field removed from response
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(users.length / limit),
+        totalUsers: users.length,
+        hasNext: endIndex < users.length,
+        hasPrev: page > 1
+      },
+      searchQuery: searchQuery || null
     });
   } catch (error) {
     res.status(500).json({ error: 'Internal server error' });

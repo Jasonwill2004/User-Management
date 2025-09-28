@@ -6,6 +6,7 @@ let users = [
     password: '$2a$10$JZU8UlU8vvKztkaRF.ELGue8d6wflB5nBifeEPEG1pfi2rmWLtmgi', // BUG FIXED: Proper bcrypt hash for 'admin123'
     name: 'Admin User',
     role: 'admin',
+    isActive: true, // FEATURE: Account activation status - admin is pre-activated
     createdAt: new Date('2024-01-01').toISOString()
   },
   {
@@ -14,6 +15,7 @@ let users = [
     password: '$2a$10$.cXRugE6yXleQt6UqzVuPu4x6cAAqQGbiCE1A5mDIVWmeDr8uTmrG', // BUG FIXED: Proper bcrypt hash for 'user123'
     name: 'Regular User',
     role: 'user',
+    isActive: true, // FEATURE: Account activation status - demo user is pre-activated
     createdAt: new Date('2024-01-02').toISOString()
   }
 ];
