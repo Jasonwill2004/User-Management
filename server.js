@@ -100,25 +100,13 @@ app.use((error, req, res, next) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Assessment 1: User Management API - DAY 2 ENHANCED`);
+  console.log(`User Management API`);
   console.log(`Server: http://localhost:${PORT}`);
   console.log(`API Docs: http://localhost:${PORT}/api-docs`);
-  console.log(`Security: Rate limiting, Input sanitization, Helmet headers`);
-  console.log(`Features: Account activation, Password reset, User search`);
-  console.log(`Logging: Professional Winston + Morgan logging system`);
   
-  logger.info('SERVER_STARTED_DAY2', {
+  logger.info('SERVER_STARTED', {
     port: PORT,
     environment: process.env.NODE_ENV || 'development',
-    enhancedFeatures: [
-      'Critical Rate Limiting Bug Fixed',
-      'XSS Prevention & Input Sanitization',
-      'Account Activation System',
-      'Password Reset with Secure Tokens',
-      'User Search Functionality',
-      'Swagger API Documentation',
-      'Professional Logging System',
-      'Unit Testing Framework'
-    ]
+    service: 'user-management-api'
   });
 });
