@@ -20,12 +20,12 @@ const options = {
     },
     servers: [
       {
-        url: process.env.NODE_ENV === 'production' 
-          ? 'https://user-management-k11z.onrender.com'
-          : 'http://localhost:8888',
-        description: process.env.NODE_ENV === 'production' 
-          ? 'Production server'
-          : 'Development server'
+        url: 'https://user-management-k11z.onrender.com',
+        description: 'Production server (Render)'
+      },
+      {
+        url: 'http://localhost:8888',
+        description: 'Development server'
       }
     ],
     components: {
