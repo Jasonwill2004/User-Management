@@ -72,9 +72,20 @@ app.get('/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });
 
-// Serve static files
+// API root endpoint
 app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  res.json({
+    message: 'User Management API',
+    version: '1.0.0',
+    status: 'running',
+    endpoints: {
+      docs: '/api-docs',
+      health: '/health',
+      auth: '/api/auth/*',
+      users: '/api/users/*'
+    },
+    timestamp: new Date().toISOString()
+  });
 });
 
 // 404 handler
