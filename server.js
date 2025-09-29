@@ -30,9 +30,11 @@ app.use(helmet({
 
 // Middleware
 app.use(cors({
-  origin: process.env.NODE_ENV === 'production' 
-    ? ['https://user-management-k11z.onrender.com'] 
-    : ['http://localhost:8888', 'http://127.0.0.1:8888'],
+  origin: [
+    'https://user-management-k11z.onrender.com',
+    'http://localhost:8888',
+    'http://127.0.0.1:8888'
+  ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'x-secret-challenge']
